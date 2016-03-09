@@ -1,29 +1,31 @@
-import os
-
-from oslo_config import cfg
+# Copyright 2016 Kuo-tung Kao
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import mock
-import testtools
-from kolla.cmd import build
+from oslo_config import cfg
 from requests import exceptions as requests_exp
-from kolla.common.config import _PROFILE_OPTS, _BASE_OPTS, _CLI_OPTS
+import testtools
+
+from kolla.cmd import build
+from kolla.common.config import _BASE_OPTS
+from kolla.common.config import _CLI_OPTS
+from kolla.common.config import _PROFILE_OPTS
 
 
 class TestKollaWorker(testtools.TestCase):
     def setUp(self):
         super(TestKollaWorker, self).setUp()
-        config = {
-            'namespace': 'kolla-test',
-            'base': 'ubuntu',
-            'base_tag': 'latest',
-            'install_type': 'source',
-            'tag': 'letest',
-            'include_header': '',
-            'include_footer': '',
-            'regex': ''
-
-        }
-
         self.conf = cfg.CONF
 
         self.conf.register_opts(_CLI_OPTS)
@@ -50,42 +52,6 @@ class TestKollaWorker(testtools.TestCase):
             datetime_mock.fromtimestamp.return_value = local_time_mock
             self.kolla.setup_working_dir()
 
-    @mock.patch('os.walk')
-    def test_set_time(self, os_walk):
-        self.kolla.working_dir = '/tmp'
-        self.all_file_list = None
-
-        os_walk.return_value = [('docker/ironic',
-                                 ['ironic-base',
-                                  'ironic-discoverd'],
-                                 []),
-                                ('docker/ironic/ironic-base',
-                                 [],
-                                 ['Dockerfile.j2', 'Dockerfile'])]
-
-        def list_all_file():
-            ret = []
-            for root, dirs, files in os_walk.return_value:
-                for file_ in files:
-                    ret.append(os.path.join(root, file_))
-                for dir_ in dirs:
-                    ret.append(os.path.join(root, dir_))
-            return ret
-
-        def create_utime():
-            self.all_file_list = list_all_file()
-
-            def utime_side_effect(path, times):
-                self.assertEqual((0, 0), times)
-                self.assertIn(path, self.all_file_list)
-                self.all_file_list.pop(self.all_file_list.index(path))
-
-            return utime_side_effect
-
-        with mock.patch('os.utime', new_callable=create_utime):
-            self.kolla.set_time()
-            self.assertEqual(0, len(self.all_file_list))
-
     @mock.patch('shutil.rmtree')
     def test_cleanup(self, rmtree):
         self.kolla.temp_dir = mock.MagicMock()
@@ -99,21 +65,27 @@ class TestKollaWorker(testtools.TestCase):
     def test_build_image_list(self):
         self.kolla.docker_build_paths = ['glance-api', 'glance-base', 'base']
         expepcted_value = [
-            {'name': 'glance-api', 'path': 'glance-api', 'fullname': 'kollaglue/centos-binary-glance-api:2.0.0',
+            {'name': 'glance-api', 'path': 'glance-api',
+             'fullname': 'kollaglue/centos-binary-glance-api:2.0.0',
              'parent_name': 'kollaglue/centos-binary-glance-base:2.0.0'},
-            {'name': 'glance-base', 'path': 'glance-base', 'fullname': 'kollaglue/centos-binary-glance-base:2.0.0',
+            {'name': 'glance-base', 'path': 'glance-base',
+             'fullname': 'kollaglue/centos-binary-glance-base:2.0.0',
              'parent_name': 'kollaglue/centos-binary-openstack-base:2.0.0'},
-            {'name': 'base', 'path': 'base', 'fullname': 'kollaglue/centos-binary-base:2.0.0',
-             'parent_name': 'centos:latest', 'parent': None,}
+            {'name': 'base', 'path': 'base',
+             'fullname': 'kollaglue/centos-binary-base:2.0.0',
+             'parent_name': 'centos:latest', 'parent': None}
         ]
         self.kolla.base = 'centos'
         self.kolla.install_type = 'binary'
         self.kolla.namespace = 'kollaglue'
-        self.kolla.image_prefix = self.kolla.base + '-' + self.kolla.install_type + '-'
+        self.kolla.image_prefix = (self.kolla.base + '-' +
+                                   self.kolla.install_type + '-')
 
         content_map = {
-            'glance-api/Dockerfile': 'FROM kollaglue/centos-binary-glance-base:2.0.0\n\n',
-            'glance-base/Dockerfile': 'FROM kollaglue/centos-binary-openstack-base:2.0.0\n\n',
+            'glance-api/Dockerfile': 'FROM kollaglue/centos-binary'
+                                     '-glance-base:2.0.0\n\n',
+            'glance-base/Dockerfile': 'FROM kollaglue/centos-binary'
+                                      '-openstack-base:2.0.0\n\n',
             'base/Dockerfile': 'FROM centos:latest\n\n',
         }
 
@@ -138,10 +110,10 @@ class TestKollaWorker(testtools.TestCase):
             self.kolla.build_image_list()
 
         for index, image in enumerate(self.kolla.images):
-            self.assertEquals('unprocessed', image['status'])
-            self.assertEquals([], image['children'])
+            self.assertEqual('unprocessed', image['status'])
+            self.assertEqual([], image['children'])
             for key in expepcted_value[index]:
-                self.assertEquals(expepcted_value[index][key], image[key])
+                self.assertEqual(expepcted_value[index][key], image[key])
 
     def test_find_parents(self):
 
@@ -179,14 +151,15 @@ class TestKollaWorker(testtools.TestCase):
             'parent': openstack_base_image,
         })
 
-        expected_images = [exepected_base_image, exepected_openstack_base_image,
+        expected_images = [exepected_base_image,
+                           exepected_openstack_base_image,
                            exepected_cinder_api_image]
 
         self.kolla.images = images
 
         self.kolla.find_parents()
 
-        self.assertEquals(expected_images, self.kolla.images)
+        self.assertEqual(expected_images, self.kolla.images)
 
     @mock.patch('kolla.cmd.build.KollaWorker.build_image_list')
     @mock.patch('kolla.cmd.build.KollaWorker.find_parents')
@@ -214,7 +187,7 @@ class TestKollaWorker(testtools.TestCase):
         queue = self.kolla.build_queue()
 
         for name in ['base', 'data']:
-            self.assertEquals(name, queue.get().get('name'))
+            self.assertEqual(name, queue.get().get('name'))
 
     @mock.patch('kolla.cmd.build.shutil.copyfile')
     def test_copy_apt_files(self, copyfile):
@@ -224,7 +197,8 @@ class TestKollaWorker(testtools.TestCase):
 
         self.kolla.copy_apt_files()
         expected_result = [mock.call('kolla_source', '/tmp/base/sources.list'),
-                           mock.call('kolla_preference', '/tmp/base/apt_preferences')]
+                           mock.call('kolla_preference',
+                                     '/tmp/base/apt_preferences')]
 
         self.assertEqual(expected_result, copyfile.call_args_list)
 
@@ -316,7 +290,8 @@ kollaglue
                           mock.call(expected_string)],
                          m().__enter__.return_value.write.call_args_list)
 
-        self.assertEqual([mock.call('/tmp/kolla/a'), mock.call('/tmp/kolla/b')],
+        self.assertEqual([mock.call('/tmp/kolla/a'),
+                          mock.call('/tmp/kolla/b')],
                          j2.FileSystemLoader.call_args_list)
 
     @mock.patch('kolla.cmd.build.os.walk')
@@ -341,7 +316,6 @@ class TestFunction(testtools.TestCase):
     def setUp(self):
         super(TestFunction, self).setUp()
         self.conf = cfg.ConfigOpts()
-        from kolla.common.config import _BASE_OPTS, _CLI_OPTS, _PROFILE_OPTS
         self.conf.register_opts(_BASE_OPTS)
         self.conf.register_opts(_CLI_OPTS)
         self.conf.register_opts(_PROFILE_OPTS)
@@ -360,71 +334,6 @@ class TestWorkerThread(testtools.TestCase):
         self.conf.register_opts(_PROFILE_OPTS)
 
     @mock.patch("kolla.cmd.build.docker")
-    @mock.patch("kolla.cmd.build.WorkerThread.end_task")
-    @mock.patch("kolla.cmd.build.WorkerThread.builder")
-    def test_run(self, builder, end_task, docker):
-        class Action(object):
-            def __init__(self, images):
-                self.images = images
-                self.index = 0
-
-            def get(self):
-                image = self.images[self.index]['image']
-                self.index += 1
-                return image
-
-            def builder(self, image):
-                for i in self.images:
-                    if image is i['image']:
-                        action_list = i['action']
-                        break
-                action = action_list.pop(0)
-                if action == 'exception':
-                    raise Exception('error')
-                elif action in ['built', 'unmatched', 'parent_error']:
-                    image['status'] = action
-
-        def get_init_image():
-            return {'status': 'ok',}
-
-        images = [
-            {
-                'image': get_init_image(),
-                'action': ['built'],
-            },
-            {
-                'image': get_init_image(),
-                'action': ['unmatched'],
-            },
-            {
-                'image': get_init_image(),
-                'action': ['parent_error'],
-            },
-            {
-                'image': get_init_image(),
-                'action': ['failed', 'built'],
-            },
-            {
-                'image': get_init_image(),
-                'action': ['exception'],
-            }
-        ]
-
-        action = Action(images)
-
-        queue = mock.MagicMock()
-        push_queue = mock.MagicMock()
-
-        queue.get.side_effect = action.get
-        builder.side_effect = action.builder
-
-        worker_thread = build.WorkerThread(queue, push_queue, self.conf)
-        worker_thread.run()
-
-        for i in images:
-            self.assertEqual(0, len(i['action']), 'failed in %s' % i)
-
-    @mock.patch("kolla.cmd.build.docker")
     def test_end_task(self, docker):
         queue = mock.MagicMock()
         push_queue = mock.MagicMock()
@@ -433,9 +342,9 @@ class TestWorkerThread(testtools.TestCase):
         image = {
             'name': 'base',
             'children': [
-                {'name': 'child1',},
-                {'name': 'child2',},
-                {'name': 'child3',}
+                {'name': 'child1'},
+                {'name': 'child2'},
+                {'name': 'child3'}
             ],
         }
         worker_thread.end_task(image)
@@ -447,7 +356,7 @@ class TestWorkerThread(testtools.TestCase):
     def test_builder_unmatched(self, docker):
         queue = mock.MagicMock()
         push_queue = mock.MagicMock()
-        image = {'status': 'unmatched', 'name': 'base',}
+        image = {'status': 'unmatched', 'name': 'base'}
         worker_thread = build.WorkerThread(queue, push_queue, self.conf)
         worker_thread.builder(image)
         self.assertEqual('unmatched', image['status'])
@@ -458,18 +367,18 @@ class TestWorkerThread(testtools.TestCase):
         push_queue = mock.MagicMock()
         worker_thread = build.WorkerThread(queue, push_queue, self.conf)
 
-        image = {'status': 'unprocessed', 'name': 'base', 'parent':
-            {'status': 'error',},}
+        image = {'status': 'unprocessed', 'name': 'base',
+                 'parent': {'status': 'error'}}
         worker_thread.builder(image)
         self.assertEqual('parent_error', image['status'])
 
-        image = {'status': 'unprocessed', 'name': 'base', 'parent':
-            {'status': 'parent_error',},}
+        image = {'status': 'unprocessed', 'name': 'base',
+                 'parent': {'status': 'parent_error'}}
         worker_thread.builder(image)
         self.assertEqual('parent_error', image['status'])
 
-        image = {'status': 'unprocessed', 'name': 'base', 'parent':
-            {'status': 'connection_error',},}
+        image = {'status': 'unprocessed', 'name': 'base',
+                 'parent': {'status': 'connection_error'}}
         worker_thread.builder(image)
         self.assertEqual('parent_error', image['status'])
 
@@ -480,8 +389,8 @@ class TestWorkerThread(testtools.TestCase):
         push_queue = mock.MagicMock()
         worker_thread = build.WorkerThread(queue, push_queue, self.conf)
 
-        image = {'status': 'unprocessed', 'name': 'base', 'source':
-            {'source': '',}, 'parent': None,}
+        image = {'status': 'unprocessed', 'name': 'base',
+                 'source': {'source': ''}, 'parent': None}
 
         def process_soruce_mock(image, source):
             image['status'] = 'error'
@@ -489,10 +398,9 @@ class TestWorkerThread(testtools.TestCase):
         process_soruce.side_effect = process_soruce_mock
 
         worker_thread.builder(image)
-        self.assertEquals('error', image['status'])
+        self.assertEqual('error', image['status'])
 
     def init_process_reource(self, requests):
-
         image = {'path': '/a', 'name': 'horizon'}
         source = {'type': 'url', 'name': 'horizon', 'source': 'horizon_source'}
 
@@ -519,7 +427,8 @@ class TestWorkerThread(testtools.TestCase):
         with mock.patch('kolla.cmd.build.open', open_mock):
             dest_archive = worker_thread.process_source(image, source)
         self.assertEqual(dest_archive, '/a/horizon-archive')
-        open_mock().__enter__.return_value.write.assert_called_once_with(response.content)
+        open_mock().__enter__.return_value. \
+            write.assert_called_once_with(response.content)
         utime.assert_called_once_with(dest_archive, (0, 0))
 
     @mock.patch("kolla.cmd.build.os.utime")
@@ -527,7 +436,8 @@ class TestWorkerThread(testtools.TestCase):
     @mock.patch("kolla.cmd.build.shutil")
     @mock.patch("kolla.cmd.build.git")
     @mock.patch("kolla.cmd.build.requests")
-    def test_process_source_url_invalid_code(self, requests, git, shutil, tarfile, utime):
+    def test_process_source_url_invalid_code(self, requests, git, shutil,
+                                             tarfile, utime):
         image, source, worker_thread = self.init_process_reource(requests)
 
         response = mock.MagicMock()
@@ -542,7 +452,8 @@ class TestWorkerThread(testtools.TestCase):
     @mock.patch("kolla.cmd.build.shutil")
     @mock.patch("kolla.cmd.build.git")
     @mock.patch("kolla.cmd.build.requests")
-    def test_process_source_url_timeout(self, requests, git, shutil, tarfile, utime):
+    def test_process_source_url_timeout(self, requests, git,
+                                        shutil, tarfile, utime):
         image, source, worker_thread = self.init_process_reource(requests)
 
         requests.get.side_effect = requests_exp.Timeout('timeout')
@@ -556,7 +467,8 @@ class TestWorkerThread(testtools.TestCase):
     @mock.patch("kolla.cmd.build.git")
     def test_process_source_git(self, git, shutil, tarfile, utime):
         image = {'path': '/a', 'name': 'horizon'}
-        source = {'type': 'url', 'name': 'horizon', 'source': 'horizon_source', 'reference': 'master'}
+        source = {'type': 'url', 'name': 'horizon', 'source': 'horizon_source',
+                  'reference': 'master'}
 
         queue = mock.MagicMock()
         push_queue = mock.MagicMock()
@@ -567,7 +479,7 @@ class TestWorkerThread(testtools.TestCase):
         dest_archive = worker_thread.process_source(image, source)
         expected_git_args_list = [mock.call(),
                                   mock.call('/a/horizon-archive-master')]
-        self.assertEquals(expected_git_args_list, git.Git.call_args_list)
+        self.assertEqual(expected_git_args_list, git.Git.call_args_list)
         git.Git().checkout.assert_called_once_with('master')
 
         tarfile.open.assert_called_once_with(dest_archive, 'w')
@@ -581,7 +493,8 @@ class TestWorkerThread(testtools.TestCase):
     @mock.patch("kolla.cmd.build.git")
     def test_process_source_git_error(self, git, shutil, tarfile, utime):
         image = {'path': '/a', 'name': 'horizon'}
-        source = {'type': 'url', 'name': 'horizon', 'source': 'horizon_source', 'reference': 'master'}
+        source = {'type': 'url', 'name': 'horizon', 'source': 'horizon_source',
+                  'reference': 'master'}
 
         queue = mock.MagicMock()
         push_queue = mock.MagicMock()
@@ -595,7 +508,7 @@ class TestWorkerThread(testtools.TestCase):
 
     @mock.patch('kolla.cmd.build.docker_client')
     @mock.patch("kolla.cmd.build.os")
-    def test_update_buildargs(self, os, dc):
+    def test_update_buildargs(self, os_mock, dc):
         queue = mock.MagicMock()
         push_queue = mock.MagicMock()
         worker_thread = build.WorkerThread(queue, push_queue, self.conf)
@@ -609,7 +522,7 @@ class TestWorkerThread(testtools.TestCase):
             'https_proxy': 'http://proxy:3128',
         }
 
-        os.environ = env
+        os_mock.environ = env
 
         worker_thread = build.WorkerThread(queue, push_queue, self.conf)
         buildargs = worker_thread.update_buildargs()
@@ -641,7 +554,6 @@ class TestPushThread(testtools.TestCase):
         super(TestPushThread, self).setUp()
 
         self.conf = cfg.CONF
-        from kolla.common.config import _PROFILE_OPTS, _BASE_OPTS, _CLI_OPTS
         self.conf.register_opts(_CLI_OPTS)
         self.conf.register_opts(_BASE_OPTS)
         self.conf.register_opts(_PROFILE_OPTS)
@@ -655,20 +567,25 @@ class TestPushThread(testtools.TestCase):
         kwargs_from_env.return_value = {}
 
         def push_image(*args, **kwargs):
-            yield "{u'status': u'The push refers to a repository [docker.io/library/ubuntu] (len: 1)'}"
-            yield "{u'status': u'Image already exists', u'progressDetail': {}, u'id': u'e9ae3c220b23'}"
-            yield "{u'errorDetail': {u'message': u'unauthorized: access to the requested resource is not authorized'}, u'error': u'unauthorized: access to the requested resource is not authorized'}"
+            yield "{u'status': u'The push refers to a repository " \
+                  "[docker.io/library/ubuntu] (len: 1)'}"
+            yield "{u'status': u'Image already exists', u'progressDetail':" \
+                  " {}, u'id': u'e9ae3c220b23'}"
+            yield "{u'errorDetail': {u'message': u'unauthorized:" \
+                  "access to the requested resource is not authorized'}," \
+                  "u'error': u'unauthorized: access to the requested resource" \
+                  "is not authorized'}"
 
         dc = mock.MagicMock()
         docker_client.return_value = dc
         dc.push_image = push_image
 
-        image = {'fullname': 'base1', 'logs': '',}
+        image = {'fullname': 'base1', 'logs': ''}
         self.push_thread.push_image(image)
 
-        image = {'fullname': 'base2', 'logs': '',}
+        image = {'fullname': 'base2', 'logs': ''}
         self.push_thread.push_image(image)
 
-        image = {'fullname': 'base3', 'logs': '',}
+        image = {'fullname': 'base3', 'logs': ''}
         self.push_thread.push_image(image)
         self.assertEqual('error', image['status'])
